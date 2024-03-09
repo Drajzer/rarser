@@ -1,10 +1,15 @@
+#[warn(non_snake_case)]
 use regex::Regex;
 use sysinfo::{System};
-use sqlx::{postgres::PgPoolOptions, Postgres};
-use std::{fs, path};
+use sqlx::postgres::PgPoolOptions;
+use std::fs;
 use std::env;
+use std::path;
 mod models;
 use models::DBStruct;
+use std::thread;
+use std::time::Duration;
+use std::collections::HashMap;
 #[tokio::main]
 
 async fn main() {
@@ -16,11 +21,11 @@ async fn main() {
         Usage: rarser [flags]
         Flags:
         -c/--country specify Database country
-        -w/--word find specific word
-        -m/--mails search for mails (0,1)
+        -w/--word find specific word in email
         -d/--domain speicfy domain
         -tl/--tld specify TLD
         -a/--all search all databases (0,1)
+        -t/--tags add tags
         
         "#);
     }
@@ -29,10 +34,10 @@ async fn main() {
     //Define default values for flags
     let mut country = "global";
     let mut word = "10";
-    let mut mails: &str = "1";
     let mut domain = "*";
     let mut tld = "*";
     let mut all = "0";
+    let mut tags = "unique";
 
     if args.len() > 1 {
         for i in 1..args.len() {
@@ -44,11 +49,7 @@ async fn main() {
                 if i + 1 < args.len() {
                     word = &args[i + 1];
                 }
-             }else if args[i] == "-m," || args[i] == "--mails"{
-                if i+1 < args.len(){
-                    mails = &args[i + 1];
-                }
-            } else if args[i] == "-d" || args[i] == "--domain" {
+             }else if args[i] == "-d" || args[i] == "--domain" {
                 if i + 1 < args.len() {
                     tld = &args[i + 1];
                 }
@@ -60,11 +61,13 @@ async fn main() {
                 if i+1 < args.len(){
                     all = &args[i + 1];
                 }
+            } else if args[i] == "-t" || args[i] == "--tags"{
+                if i+1 < args.len(){
+                    tags = &args[i + 1];
+                }
             } 
         }
     }
-
-
 
     let env = fs::read_to_string(".env").unwrap();
     let (key,databaseUrl) = env.split_once('=').unwrap();
@@ -75,8 +78,38 @@ async fn main() {
 
     let results = sqlx::query_as!(
         DBStruct,
-        "SELECT * FROM dbs"
+        "SELECT * FROM sources"
     ).fetch_all(&pool).await;
+
+    let tagovi: Vec<&str> = tags.split(",").collect();
+    let mut tagCountsVec: Vec<HashMap<&str, usize>> = Vec::new();
+
+    let binding = results.unwrap();
+    for x in &binding{
+        let mut tagCounts: HashMap<&str, usize> = HashMap::new();
+        if x.size > maxFileSize as i32{
+            println!("chunks");
+        }
+        if x.country == country{
+            let tagoviDb: Vec<&str> = x.tags.split(",").collect();
+            for element in &tagoviDb {
+                if tagovi.contains(&element) {
+                    *tagCounts.entry(&x.path).or_insert(0) +=1;
+                }
+            }
+            tagCountsVec.push(tagCounts);
+        }
+        
+    }
+    tagCountsVec.sort_by(|a,b|{
+        let countA: usize = a.values().sum();
+        let countB: usize = b.values().sum();
+        countB.cmp(&countA)
+    });
+    println!("{:?}",tagCountsVec);
+
+
+    let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
 
 
 }

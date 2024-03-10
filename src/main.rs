@@ -1,18 +1,72 @@
+
 #[warn(non_snake_case)]
 use regex::Regex;
+use sqlx::PgPool;
 use sysinfo::{System};
 use sqlx::postgres::PgPoolOptions;
 use std::fs;
 use std::env;
+use std::fs::read_to_string;
 use std::path;
 mod models;
 use models::DBStruct;
 use std::thread;
 use std::time::Duration;
 use std::collections::HashMap;
+use std::fs::File;
+use std::error::Error;
+use std::io::{BufReader, BufRead};
+
+//Error handling
+//Multithreading
+//Flags
+
+fn readFile(path: &str) -> std::io::Result<()> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let ln = line?;
+        println!("{}", ln);
+    }
+
+    Ok(())
+}
+
+
+async fn conncetDatabase()-> Result<PgPool, Box<dyn Error>>{
+    let env_content = match fs::read_to_string(".env") {
+        Ok(content) => content,
+        Err(e) => {
+            println!("Error reading .env file: {}", e);
+            return Err(Box::new(e));
+        }
+    };
+
+    let databaseUrl = match env_content.lines().next() {
+        Some(line) => {
+            let (_, url) = line.split_once('=').expect("Invalid .env file");
+            url.trim().to_string()
+        }
+        None => {
+            println!("No database url found in .env file");
+            return Err("No database URL found in .env file".into());
+        }
+    };
+
+    let pool = PgPoolOptions::new()
+        .max_connections(50)
+        .connect(&databaseUrl)
+        .await?;
+
+    Ok(pool)
+    
+}
+
 #[tokio::main]
 
-async fn main() {
+
+async fn main() -> std::io::Result<()>  {
     let args: Vec<String> = env::args().collect();
 
     if args.len() <2{
@@ -69,12 +123,11 @@ async fn main() {
         }
     }
 
-    let env = fs::read_to_string(".env").unwrap();
-    let (key,databaseUrl) = env.split_once('=').unwrap();
-    let pool = PgPoolOptions::new().max_connections(50).connect(&databaseUrl).await.unwrap();
 
     let s = System::new_all();
     let maxFileSize =  ((s.total_memory() as f64/1_073_741_824.0).round())/2.0;
+
+    let pool = conncetDatabase().await.expect("database error");
 
     let results = sqlx::query_as!(
         DBStruct,
@@ -106,10 +159,17 @@ async fn main() {
         let countB: usize = b.values().sum();
         countB.cmp(&countA)
     });
+    tagCountsVec.retain(|map| !map.is_empty());
     println!("{:?}",tagCountsVec);
 
+    for x in tagCountsVec{
+        for (path,matches) in x{ 
+            println!("{}",path);
+            readFile(path);
+        }
+    }
 
     let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
 
-
+    Ok(())
 }

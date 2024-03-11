@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::error::Error;
 use std::io::{BufReader, BufRead};
-
+use rayon::prelude::*;
 //Error handling
 //Multithreading
 //Flags
@@ -135,7 +135,7 @@ async fn main() -> std::io::Result<()>  {
     ).fetch_all(&pool).await;
 
     let tagovi: Vec<&str> = tags.split(",").collect();
-    let mut tagCountsVec: Vec<HashMap<&str, usize>> = Vec::new();
+    let mut priorityVec: Vec<HashMap<&str, usize>> = Vec::new();
 
     let binding = results.unwrap();
     for x in &binding{
@@ -150,24 +150,28 @@ async fn main() -> std::io::Result<()>  {
                     *tagCounts.entry(&x.path).or_insert(0) +=1;
                 }
             }
-            tagCountsVec.push(tagCounts);
+            priorityVec.push(tagCounts);
         }
         
     }
-    tagCountsVec.sort_by(|a,b|{
+    priorityVec.sort_by(|a,b|{
         let countA: usize = a.values().sum();
         let countB: usize = b.values().sum();
         countB.cmp(&countA)
     });
-    tagCountsVec.retain(|map| !map.is_empty());
-    println!("{:?}",tagCountsVec);
+    priorityVec.retain(|map| !map.is_empty());
+    println!("{:?}",priorityVec);
 
-    for x in tagCountsVec{
-        for (path,matches) in x{ 
-            println!("{}",path);
-            readFile(path);
+    let mut paths: Vec<&str> = Vec::new();
+    for x in priorityVec{
+        for (path,_) in x{ 
+            paths.push(path);
+
         }
     }
+    paths.par_iter().for_each(|&path| {
+        readFile(path);
+    });
 
     let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
 

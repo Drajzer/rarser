@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = "4.5.2"
+colored = "2.1.0"
 rayon = "1.9.0"
 regex = "1.10.3"
 sqlx = {version="0.7.3",  features = ["runtime-tokio-native-tls", "json", "postgres"]}

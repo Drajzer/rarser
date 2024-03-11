@@ -17,22 +17,72 @@ use std::fs::File;
 use std::error::Error;
 use std::io::{BufReader, BufRead};
 use rayon::prelude::*;
+use colored::Colorize;
 //Error handling
-//Multithreading
-//Flags
-
-fn readFile(path: &str) -> std::io::Result<()> {
+//Add options for more countries, tlds, domains
+//save results in file
+fn readFile(path: &str, domain:&str) -> std::io::Result<()> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-
+    let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
+    
     for line in reader.lines() {
         let ln = line?;
-        println!("{}", ln);
+        printEmails(&ln, &emailRegex,domain,path);
     }
-
+    
     Ok(())
 }
+fn printEmails(line: &str, emailRegex: &Regex,domain:&str, source: &str) {
+    let mut matchesSum = 0;
+    if domain != "*"{
+        for word in line.split_whitespace() {
+            if emailRegex.is_match(word) {
+                if findDetails(word)[1] == domain{
+                    println!("{} {}\n{} {}","FOUND: ".green(),word.green(),"SOURCE: ".green(), source.green());
+                    matchesSum+=1;
+                }
+            }
+        }
+    }
+    else{
+        for word in line.split_whitespace() {
+            if emailRegex.is_match(word) {
+                println!("{} {}","FOUND: ".green(),word.green());
+                matchesSum+=1;
 
+            }
+        }
+    }
+
+}
+fn findDetails(mail:&str) -> Vec<&str>{
+
+    let domain = mail.find("@");
+    let indexD = domain.unwrap();
+    let mut tmp = 0;
+    for x in mail.chars(){
+        if tmp > 8{
+            if x == '.'{
+                break;
+            }
+        }
+        tmp +=1;
+        
+    }
+    let mut details: Vec<&str> = Vec::new();
+    if tmp <= mail.len(){
+
+        let domain = &mail[indexD+1..tmp];
+        let word =  &mail[0..indexD];
+        let tld =  &mail[tmp..mail.len()];
+        details.push(word);
+        details.push(domain);
+        details.push(tld);
+    }
+    details
+
+}
 
 async fn conncetDatabase()-> Result<PgPool, Box<dyn Error>>{
     let env_content = match fs::read_to_string(".env") {
@@ -63,6 +113,7 @@ async fn conncetDatabase()-> Result<PgPool, Box<dyn Error>>{
     
 }
 
+
 #[tokio::main]
 
 
@@ -75,10 +126,9 @@ async fn main() -> std::io::Result<()>  {
         Usage: rarser [flags]
         Flags:
         -c/--country specify Database country
-        -w/--word find specific word in email
+        -w/--word find specific word in email  
         -d/--domain speicfy domain
         -tl/--tld specify TLD
-        -a/--all search all databases (0,1)
         -t/--tags add tags
         
         "#);
@@ -87,7 +137,7 @@ async fn main() -> std::io::Result<()>  {
 
     //Define default values for flags
     let mut country = "global";
-    let mut word = "10";
+    let mut word = "*";
     let mut domain = "*";
     let mut tld = "*";
     let mut all = "0";
@@ -95,7 +145,7 @@ async fn main() -> std::io::Result<()>  {
 
     if args.len() > 1 {
         for i in 1..args.len() {
-            if args[i] == "-c" || args[i] == "--country" {
+                                  if args[i] == "-c" || args[i] == "--country" {
                 if i + 1 < args.len() {
                     country = &args[i + 1];
                 }
@@ -105,7 +155,7 @@ async fn main() -> std::io::Result<()>  {
                 }
              }else if args[i] == "-d" || args[i] == "--domain" {
                 if i + 1 < args.len() {
-                    tld = &args[i + 1];
+                    domain = &args[i + 1];
                 }
             } else if args[i] == "-tl" || args[i] == "--tld" {
                 if i + 1 < args.len() {
@@ -122,9 +172,15 @@ async fn main() -> std::io::Result<()>  {
             } 
         }
     }
-
-
-
+    println!(r#"
+    
+Your config:
+    Country: {},
+    Word: {},
+    Domain: {},
+    TLD: {},
+    All: {},
+    Tags: {}"#,country,word,domain,tld,all,tags);
 
     let pool = conncetDatabase().await.expect("database error");
 
@@ -139,7 +195,7 @@ async fn main() -> std::io::Result<()>  {
     let binding = results.unwrap();
     for x in &binding{
         let mut tagCounts: HashMap<&str, usize> = HashMap::new();
-        if x.country == country{
+        if all == "1"{
             let tagoviDb: Vec<&str> = x.tags.split(",").collect();
             for element in &tagoviDb {
                 if tagovi.contains(&element) {
@@ -147,8 +203,18 @@ async fn main() -> std::io::Result<()>  {
                 }
             }
             priorityVec.push(tagCounts);
+
         }
-        
+        else if  x.country == country{
+            let tagoviDb: Vec<&str> = x.tags.split(",").collect();
+            for element in &tagoviDb {
+                if tagovi.contains(&element) {
+                    *tagCounts.entry(&x.path).or_insert(0) +=1;
+                }
+            }
+            priorityVec.push(tagCounts);
+            
+        }
     }
     priorityVec.sort_by(|a,b|{
         let countA: usize = a.values().sum();
@@ -156,19 +222,20 @@ async fn main() -> std::io::Result<()>  {
         countB.cmp(&countA)
     });
     priorityVec.retain(|map| !map.is_empty());
-
+    
     let mut paths: Vec<&str> = Vec::new();
     for x in priorityVec{
         for (path,_) in x{ 
             paths.push(path);
-
+            
         }
     }
+
     paths.par_iter().for_each(|&path| {
-        readFile(path);
+        
+        readFile(path,domain);
     });
 
-    let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
 
     Ok(())
 }

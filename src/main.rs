@@ -124,8 +124,7 @@ async fn main() -> std::io::Result<()>  {
     }
 
 
-    let s = System::new_all();
-    let maxFileSize =  ((s.total_memory() as f64/1_073_741_824.0).round())/2.0;
+
 
     let pool = conncetDatabase().await.expect("database error");
 
@@ -140,9 +139,6 @@ async fn main() -> std::io::Result<()>  {
     let binding = results.unwrap();
     for x in &binding{
         let mut tagCounts: HashMap<&str, usize> = HashMap::new();
-        if x.size > maxFileSize as i32{
-            println!("chunks");
-        }
         if x.country == country{
             let tagoviDb: Vec<&str> = x.tags.split(",").collect();
             for element in &tagoviDb {
@@ -160,7 +156,6 @@ async fn main() -> std::io::Result<()>  {
         countB.cmp(&countA)
     });
     priorityVec.retain(|map| !map.is_empty());
-    println!("{:?}",priorityVec);
 
     let mut paths: Vec<&str> = Vec::new();
     for x in priorityVec{

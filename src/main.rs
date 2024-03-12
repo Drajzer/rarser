@@ -1,59 +1,90 @@
-
-#[warn(non_snake_case)]
-use regex::Regex;
-use sqlx::PgPool;
-use sqlx::postgres::PgPoolOptions;
-use sqlx::Pool;
-use sqlx::Postgres;
-use std::fs;
-use std::env;
-use std::fs::Metadata;
-mod models;
-use models::DBStruct;
-use std::collections::HashMap;
-use std::fs::File;
-use std::error::Error;
-use std::io::{BufReader, BufRead};
-use rayon::prelude::*;
+#![allow(non_snake_case)]
 use colored::Colorize;
+use lazy_static::lazy_static;
+use rayon::prelude::*;
+use regex::Regex;
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres, PgPool};
+use std::collections::HashMap;
+use std::error::Error;
+use std::fs::{self, File, Metadata};
+use std::io::{BufRead, BufReader};
+use std::env;
+use std::sync::Mutex;
+mod models;
+use crate::models::DBStruct;
 //Error handling
-//Add options for more countries, tlds, domains
 //save results in file
-fn readFile(path: &str, domain:&str) -> std::io::Result<()> {
+
+//Global variable to calculate number of matches
+lazy_static! {
+    static ref MATCHES: Mutex<u32> = Mutex::new(0);
+}
+//Increment global variabl MATCHES
+fn incrementMatches() {
+
+    let mut counter = MATCHES.lock().unwrap();
+    
+    *counter += 1;
+    
+}
+
+//Reading path file
+fn readFile(path: &str, domain:&str, tld:&str, word:&str) -> std::io::Result<()> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
     
     for line in reader.lines() {
         let ln = line?;
-        printEmails(&ln, &emailRegex,domain,path);
+        printEmails(&ln, &emailRegex,domain,tld,word,path);
     }
     
     Ok(())
 }
-fn printEmails(line: &str, emailRegex: &Regex,domain:&str, source: &str) {
-    let mut matchesSum = 0;
-    if domain != "*"{
-        for word in line.split_whitespace() {
-            if emailRegex.is_match(word) {
-                if findDetails(word)[1] == domain{
-                    println!("{} {}\n{} {}","FOUND: ".green(),word.green(),"SOURCE: ".green(), source.green());
-                    matchesSum+=1;
+//Match all possible cases from arguments
+fn printEmails(line: &str, emailRegex: &Regex,domain:&str,tld:&str, wordToFInd:&str, source: &str) {
+    for word in line.split_whitespace() {
+        if emailRegex.is_match(word) {
+            let details = findDetails(word);
+            match (domain, tld, wordToFInd) {
+                ("*", "*", "*") => {
+                    println!("{} {}\n {} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+            }
+                (d, "*", "*") if &d == &details[1] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
                 }
+                ("*", t, "*") if &t == &details[2] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+                }
+                ("*", "*", w) if &w == &details[0] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+                }
+                (d, t, "*") if &d == &details[1] && &t == &details[2] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+                }
+                (d, "*", w) if &d == &details[1] && &w == &details[0] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+                }
+                ("*", t, w) if &t == &details[2] && &w == &details[0] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+                }
+                (d, t, w) if &d == &details[1] && &t == &details[2] && &w == &details[0] => {
+                    println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    incrementMatches()
+                }
+                _ => {}
             }
         }
     }
-    else{
-        for word in line.split_whitespace() {
-            if emailRegex.is_match(word) {
-                println!("{} {}","FOUND: ".green(),word.green());
-                matchesSum+=1;
-
-            }
-        }
-    }
-
 }
+//Extract username, domain and TLD from email and push it in vector
 fn findDetails(mail:&str) -> Vec<&str>{
 
     let domain = mail.find("@");
@@ -81,7 +112,7 @@ fn findDetails(mail:&str) -> Vec<&str>{
     details
 
 }
-
+//Connect with databse, reading .env
 async fn conncetDatabase()-> Result<PgPool, Box<dyn Error>>{
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -112,7 +143,7 @@ async fn conncetDatabase()-> Result<PgPool, Box<dyn Error>>{
 }
 
 
-
+//Add new database in sources db
 async fn addSource(country: &String, tags: &String, path: &String, pool: Pool<Postgres>)-> Result<(), sqlx::Error>{
 
     let metaData:Metadata = match fs::metadata(path) {
@@ -160,30 +191,37 @@ async fn main() -> std::io::Result<()>  {
         -d/--domain speicfy domain
         -tl/--tld specify TLD
         -t/--tags add tags
-        -a/--add add database to sources
+        -a/--add add database to sources [country] [tags] [path]
         
         "#);
+        return Ok(());
     }
+    
     let pool = conncetDatabase().await.expect("database error");
 
 
+    if args[1] == "-a"{
+        let countryDb = &args[2];
+        let tagsDb: &String = &args[3];
+        let pathDb = &args[4];
+        match addSource(countryDb, tagsDb, pathDb, pool.clone()).await{
+            Ok(()) => println!("Success"),
+            Err(e)=>{
+                println!("{} {}","Error: ".red(), e);
+            }
+
+        };
+        return Ok(());
+    }
+    
     //Define default values for flags
+
     let mut country = "global";
     let mut word = "*";
     let mut domain = "*";
     let mut tld = "*";
     let mut all = "0";
     let mut tags = "unique";
-    
-    if args[1] == "-a"{
-        print!("here works");
-        let countryDb = &args[2];
-        let tagsDb: &String = &args[3];
-        let pathDb = &args[4];
-        println!("{} {} {} ",countryDb,tagsDb,pathDb);
-        addSource(countryDb, tagsDb, pathDb, pool.clone()).await;
-        return Ok(());
-    }
     
     if args.len() > 1 {
         for i in 1..args.len() {
@@ -224,7 +262,7 @@ Your config:
     All: {},
     Tags: {}"#,country,word,domain,tld,all,tags);
 
-    
+    //Extract infos from sources DB
     let results = sqlx::query_as!(
         DBStruct,
         "SELECT * FROM sources"
@@ -257,6 +295,7 @@ Your config:
             
         }
     }
+    //Makes priorty vector by counting number of matched tags
     priorityVec.sort_by(|a,b|{
         let countA: usize = a.values().sum();
         let countB: usize = b.values().sum();
@@ -272,10 +311,13 @@ Your config:
         }
     }
 
+    // Implement rayon (threadpool)
     paths.par_iter().for_each(|&path| {
         
-        readFile(path,domain);
+        readFile(path,domain,tld,word);
     });
+    let counter = MATCHES.lock().unwrap();
+    println!("{} {}", "Total matches:".red() ,*counter);
 
 
     Ok(())

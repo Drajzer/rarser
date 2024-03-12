@@ -2,16 +2,14 @@
 #[warn(non_snake_case)]
 use regex::Regex;
 use sqlx::PgPool;
-use sysinfo::{System};
 use sqlx::postgres::PgPoolOptions;
+use sqlx::Pool;
+use sqlx::Postgres;
 use std::fs;
 use std::env;
-use std::fs::read_to_string;
-use std::path;
+use std::fs::Metadata;
 mod models;
 use models::DBStruct;
-use std::thread;
-use std::time::Duration;
 use std::collections::HashMap;
 use std::fs::File;
 use std::error::Error;
@@ -114,11 +112,43 @@ async fn conncetDatabase()-> Result<PgPool, Box<dyn Error>>{
 }
 
 
+
+async fn addSource(country: &String, tags: &String, path: &String, pool: Pool<Postgres>)-> Result<(), sqlx::Error>{
+
+    let metaData:Metadata = match fs::metadata(path) {
+        Ok(metadata) => {
+            metadata
+        }
+        Err(e) => {
+            println!("{}", e);
+            return Err(e.into());
+        }
+        
+    };
+    let fileSize =  ((metaData.len() as f64/1_073_741_824.0).round())/2.0;
+
+    sqlx::query!(
+        "INSERT INTO sources (country, tags, path,size) VALUES ($1, $2, $3, $4)",
+        country,
+        tags,
+        path,
+        fileSize as i32,
+    )
+    .execute(&pool)
+    .await?;
+
+    Ok(())
+
+}
+
+
 #[tokio::main]
 
 
 async fn main() -> std::io::Result<()>  {
     let args: Vec<String> = env::args().collect();
+
+
 
     if args.len() <2{
         println!(r#"
@@ -130,9 +160,11 @@ async fn main() -> std::io::Result<()>  {
         -d/--domain speicfy domain
         -tl/--tld specify TLD
         -t/--tags add tags
+        -a/--add add database to sources
         
         "#);
     }
+    let pool = conncetDatabase().await.expect("database error");
 
 
     //Define default values for flags
@@ -142,10 +174,20 @@ async fn main() -> std::io::Result<()>  {
     let mut tld = "*";
     let mut all = "0";
     let mut tags = "unique";
-
+    
+    if args[1] == "-a"{
+        print!("here works");
+        let countryDb = &args[2];
+        let tagsDb: &String = &args[3];
+        let pathDb = &args[4];
+        println!("{} {} {} ",countryDb,tagsDb,pathDb);
+        addSource(countryDb, tagsDb, pathDb, pool.clone()).await;
+        return Ok(());
+    }
+    
     if args.len() > 1 {
         for i in 1..args.len() {
-                                  if args[i] == "-c" || args[i] == "--country" {
+            if args[i] == "-c" || args[i] == "--country" {
                 if i + 1 < args.len() {
                     country = &args[i + 1];
                 }
@@ -169,7 +211,7 @@ async fn main() -> std::io::Result<()>  {
                 if i+1 < args.len(){
                     tags = &args[i + 1];
                 }
-            } 
+            }
         }
     }
     println!(r#"
@@ -182,8 +224,7 @@ Your config:
     All: {},
     Tags: {}"#,country,word,domain,tld,all,tags);
 
-    let pool = conncetDatabase().await.expect("database error");
-
+    
     let results = sqlx::query_as!(
         DBStruct,
         "SELECT * FROM sources"

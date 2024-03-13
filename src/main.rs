@@ -12,8 +12,12 @@ use std::env;
 use std::sync::Mutex;
 mod models;
 use crate::models::DBStruct;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::io;
 //Error handling
 //save results in file
+//support xlsx
 
 //Global variable to calculate number of matches
 lazy_static! {
@@ -27,6 +31,13 @@ fn incrementMatches() {
     *counter += 1;
     
 }
+
+fn saveToFile(filePath: &str, line: &str) -> io::Result<()> {
+    let mut file = OpenOptions::new().append(true).create(true).open(filePath)?;
+    writeln!(file, "{}", line)?;
+    Ok(())
+}
+
 
 //Reading path file
 fn readFile(path: &str, domain:&str, tld:&str, word:&str) -> std::io::Result<()> {
@@ -49,34 +60,42 @@ fn printEmails(line: &str, emailRegex: &Regex,domain:&str,tld:&str, wordToFInd:&
             match (domain, tld, wordToFInd) {
                 ("*", "*", "*") => {
                     println!("{} {}\n {} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
             }
                 (d, "*", "*") if &d == &details[1] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 ("*", t, "*") if &t == &details[2] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 ("*", "*", w) if &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 (d, t, "*") if &d == &details[1] && &t == &details[2] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 (d, "*", w) if &d == &details[1] && &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 ("*", t, w) if &t == &details[2] && &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 (d, t, w) if &d == &details[1] && &t == &details[2] && &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
+                    saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 _ => {}
@@ -174,8 +193,6 @@ async fn addSource(country: &String, tags: &String, path: &String, pool: Pool<Po
 
 
 #[tokio::main]
-
-
 async fn main() -> std::io::Result<()>  {
     let args: Vec<String> = env::args().collect();
 
@@ -191,7 +208,8 @@ async fn main() -> std::io::Result<()>  {
         -d/--domain speicfy domain
         -tl/--tld specify TLD
         -t/--tags add tags
-        -a/--add add database to sources [country] [tags] [path]
+        -a/--all search all sources
+        --add add database to sources [country] [tags] [path]
         
         "#);
         return Ok(());
@@ -200,7 +218,7 @@ async fn main() -> std::io::Result<()>  {
     let pool = conncetDatabase().await.expect("database error");
 
 
-    if args[1] == "-a"{
+    if args[1] == "-add"{
         let countryDb = &args[2];
         let tagsDb: &String = &args[3];
         let pathDb = &args[4];

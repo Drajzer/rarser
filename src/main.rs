@@ -15,6 +15,8 @@ use crate::models::DBStruct;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::io;
+use office::{Excel, DataType};
+
 //Error handling
 //save results in file
 //support xlsx
@@ -32,6 +34,8 @@ fn incrementMatches() {
     
 }
 
+
+//Save linme in file
 fn saveToFile(filePath: &str, line: &str) -> io::Result<()> {
     let mut file = OpenOptions::new().append(true).create(true).open(filePath)?;
     writeln!(file, "{}", line)?;
@@ -39,11 +43,32 @@ fn saveToFile(filePath: &str, line: &str) -> io::Result<()> {
 }
 
 
+//Reading xlsx/xls/xlsm
+fn readXlsx(path:&str, domain:&str, tld:&str, word:&str){
+    let emailRegex: Regex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
+
+    let mut workbook = Excel::open(path).unwrap();
+    let sheetNames = workbook.sheet_names();
+
+    for name in sheetNames.unwrap() {
+        if let Ok(range) = workbook.worksheet_range(&name) {
+            for row in range.rows() {
+                for cell in row {
+                    if let DataType::String(s) = cell {
+                        printEmails(&s, &emailRegex, domain, tld, word, path)
+                    }
+                }
+            }
+        }
+    }
+
+}
+
 //Reading path file
 fn readFile(path: &str, domain:&str, tld:&str, word:&str) -> std::io::Result<()> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    let emailRegex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
+    let emailRegex: Regex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
     
     for line in reader.lines() {
         let ln = line?;
@@ -60,42 +85,42 @@ fn printEmails(line: &str, emailRegex: &Regex,domain:&str,tld:&str, wordToFInd:&
             match (domain, tld, wordToFInd) {
                 ("*", "*", "*") => {
                     println!("{} {}\n {} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
             }
                 (d, "*", "*") if &d == &details[1] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 ("*", t, "*") if &t == &details[2] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 ("*", "*", w) if &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 (d, t, "*") if &d == &details[1] && &t == &details[2] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 (d, "*", w) if &d == &details[1] && &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 ("*", t, w) if &t == &details[2] && &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 (d, t, w) if &d == &details[1] && &t == &details[2] && &w == &details[0] => {
                     println!("{} {}\n{} {}", "FOUND: ".green(), word.green(), "SOURCE: ".blue(),source.blue());
-                    saveToFile("output.txt", word);
+                    let _ = saveToFile("output.txt", word);
                     incrementMatches()
                 }
                 _ => {}
@@ -209,7 +234,7 @@ async fn main() -> std::io::Result<()>  {
         -tl/--tld specify TLD
         -t/--tags add tags
         -a/--all search all sources
-        --add add database to sources [country] [tags] [path]
+        -add add database to sources [country] [tags] [path]
         
         "#);
         return Ok(());
@@ -331,8 +356,16 @@ Your config:
 
     // Implement rayon (threadpool)
     paths.par_iter().for_each(|&path| {
-        
-        readFile(path,domain,tld,word);
+        let extension = match path.rfind('.') {
+            Some(index) => &path[index + 1..],
+            None => "",
+        };
+        if extension == "xlsx" || extension == "xls" || extension == "xlsm"{
+            readXlsx(path,domain,tld,word);
+        }
+        else{
+            let _ = readFile(path,domain,tld,word);
+        }
     });
     let counter = MATCHES.lock().unwrap();
     println!("{} {}", "Total matches:".red() ,*counter);

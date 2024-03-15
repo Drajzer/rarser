@@ -44,24 +44,27 @@ fn saveToFile(filePath: &str, line: &str) -> io::Result<()> {
 
 
 //Reading xlsx/xls/xlsm
-fn readXlsx(path:&str, domain:&str, tld:&str, word:&str){
-    let emailRegex: Regex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
+fn readXlsx(path: &str, domain: &str, tld: &str, word: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let email_regex: Regex =
+        Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")?;
 
-    let mut workbook = Excel::open(path).unwrap();
-    let sheetNames = workbook.sheet_names();
+    let mut workbook = Excel::open(path)?;
 
-    for name in sheetNames.unwrap() {
+    let sheetNames = workbook.sheet_names()?;
+
+    for name in sheetNames {
         if let Ok(range) = workbook.worksheet_range(&name) {
             for row in range.rows() {
                 for cell in row {
                     if let DataType::String(s) = cell {
-                        printEmails(&s, &emailRegex, domain, tld, word, path)
+                        printEmails(&s, &email_regex, domain, tld, word, path);
                     }
                 }
             }
         }
     }
 
+    Ok(())
 }
 
 //Reading path file

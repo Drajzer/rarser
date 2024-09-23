@@ -1,0 +1,9 @@
+CREATE TABLE `sources` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `country` varchar(32) NOT NULL DEFAULT 'global',
+  `tags` varchar(256) NOT NULL DEFAULT 'unique',
+  `size` int(11) NOT NULL,
+  `path` varchar(512) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `path` (`path`)
+)
